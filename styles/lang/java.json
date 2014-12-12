@@ -8,6 +8,9 @@
   "blockCommentStart": "/*",
   "blockCommentEnd":   "*/",
 
+  
+  
+
   "keywords": [
     "abstract", "continue", "for", "new", "switch", "assert", "default", 
     "goto", "package", "synchronized", "boolean", "do", "if", "private", 
@@ -23,7 +26,7 @@
   "typeKeywords": [
     "boolean", "double", "byte", "int", "short", "char", "void", "long", "float"
   ],
-
+  
   "extraTypeKeywords": [],
 
   "operators": [
@@ -34,32 +37,57 @@
     "^=", "%=", "<<=", ">>=", ">>>="
   ],
   
+  "keywordOperators": [],
+  "typeOperators": [],
   "extraOperators": [],
+
+  
   "symbols":  "[=><!~?:&|+\\-*\\/\\^%]+",
   "escapes":  "\\\\(?:[abfnrtv\\\\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})",
+    
+  
   "tokenizer": {
     "root": [
-      ["[a-z_$][\\w$]*", { "cases": { "@typeKeywords": "keyword.type",
-                                   "@extraTypeKeywords": "keyword.type.extra",
-                                   "@keywords": "keyword",
+      
+      ["[a-z_$][\\w$]*", { "cases": { "@extraTypeKeywords": "keyword.type.extra",
+                                   "@typeKeywords": "keyword.type",
                                    "@extraKeywords": "keyword.extra",
+                                   "@keywords": "keyword",
                                    "@default": "identifier" } }],
       ["[A-Z][\\w\\$]*", "type.identifier" ],  
+      
+      
       { "include": "@whitespace" },
+      
+      
       ["[{}()\\[\\]]", "@brackets"],
       ["[<>](?!@symbols)", "@brackets"],
-      ["@symbols", { "cases": { "@operators": "operator", 
-                              "@extraOperators": "operator.extra", 
+      ["@symbols", { "cases": { "@keywordOperators": "operator.keyword",
+                              "@typeOperators": "operator.type",
+                              "@extraOperators": "operator.extra",
+                              "@operators": "operator", 
                               "@default"  : "" } } ],
+
+      
+      
+      
       ["@\\s*[a-zA-Z_\\$][\\w\\$]*", { "token": "meta", "log": "meta token: $0" }], 
+      
+      
       ["\\d*\\.\\d+([eE][\\-+]?\\d+)?[fFdD]?", "number.float"],
       ["0[xX][0-9a-fA-F_]*[0-9a-fA-F][Ll]?", "number.hex"],
       ["0[0-7_]*[0-7][Ll]?", "number.octal"],
       ["0[bB][0-1_]*[0-1][Ll]?", "number.binary"],
       ["\\d+[lL]?", "number"],
+
+      
       ["[;,.]", "delimiter"],
+      
+      
       ["\"([^\"\\\\]|\\\\.)*$", "string.invalid" ],  
       ["\"",  "string", "@string" ],
+      
+      
       ["'[^\\\\']'", "string"],
       ["(')(@escapes)(')", ["string","string.escape","string"]],
       ["'", "string.invalid"]
@@ -73,6 +101,7 @@
 
     "comment": [
       ["[^\\/*]+", "comment" ],
+      
       ["\\/\\*",    "comment.invalid" ],
       ["\\*/",    "comment", "@pop"  ],
       ["[\\/*]",   "comment" ]
