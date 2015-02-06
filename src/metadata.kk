@@ -133,6 +133,36 @@ function parsePlainMeta( txt : string, fmt : formatter, modes : string, metadata
 val rxMeta = regex(@"^"+ metaKey + @" *(.*(?:\n .*)*)(?:\n+(?=\n|" + metaKey + ")|$)")
 val metaKey = @"(?:@(\w+) +)?((?:\w|([\.#~])(?=\S))[\w\-\.#~, ]*?\*?) *[:]"
 
+// --------------------------------------------------------------
+// Complete author keys
+// --------------------------------------------------------------
+
+// fill out all the authorN keys
+public function completeAuthorKeys( mdata : metadata ) : metadata {
+  var authorCount := 0
+  val authors = mdata.concat fun(kv) {
+    val (key,value) = kv
+    if (key=="author") {
+      authorCount := authorCount+1
+      [("author" + authorCount.show, value)]
+    }
+    elif (key=="affiliation" || key=="institute" || key=="address") {
+      [("affiliation" + authorCount.show, value)]
+    }
+    elif (key=="email") {
+      [("email" + authorCount.show, value)]
+    }
+    elif (key=="author-note") {
+      [("author-note" + authorCount.show, value)]
+    }
+    else []
+  }
+  mdata + authors + [("author-count", authorCount.show )]
+}
+
+// --------------------------------------------------------------
+// Default metadata
+// --------------------------------------------------------------
 
 function defaultMeta( options : options, fmt : formatter ) : string {
   ( [ fmt.showFormatter + ": True",
