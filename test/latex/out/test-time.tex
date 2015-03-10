@@ -1,0 +1,131 @@
+\documentclass{book}
+
+\usepackage{etoolbox}
+\usepackage{xkeyval}
+\usepackage{pgfkeys}
+\usepackage{options}
+
+\begin{document}
+\makeatletter
+
+
+
+\options{%
+  /bench/.new family,
+  /bench/style/.new choice    = {simple,complex},
+  /bench/library/.new choice  = {baseline,options,pgfkeys,xkeyval},
+  /bench/repetitions/.new num = 10000,
+  /bench/baseline/.new num    = 800,
+  /bench/trace/.new toggle,
+}
+
+\options{/bench, library=options, style=simple, repetitions=50000}
+
+
+\newcommand\preparetest[1]{
+	\eifstrequal{#1}{options}{%
+		\options{%
+			/bar/bar-test/.new value = hi,
+      /foo/foo-test/.new value = world,
+			/foo/.new family={/bar},
+		}    
+		\def\test##1{\options{/foo,##1}}
+		\def\valueof##1##2{\option{/##1/##2}}
+	}
+	{\eifstrequal{#1}{pgfkeys}{%
+		\pgfkeys{%
+			/bar/bar-test/.initial=hi,
+      /foo/foo-test/.initial=world,
+			/foo/.is family,
+			/foo/.search also={/bar},
+		}
+		\def\test##1{\pgfkeys{/foo,##1}}
+		\def\valueof##1##2{\pgfkeysvalueof{/##1/##2}}
+	}
+	{\eifstrequal{#1}{xkeyval}{%
+		\define@cmdkey{bar}{bar-test}{}%
+    \define@cmdkey{foo}{foo-test}{}%
+		\define@cmdkey{foo}{x}{}%
+		\def\test##1{\setkeys{foo,bar}{##1}}%
+		\def\valueof##1##2{\csuse{cmdKV@##1@##2}}%
+	}
+	{\@latex@error{Cannot test package "#1"}}%
+	}}%
+}
+
+
+
+\newcount\testcount
+\newcommand\testtencomplex{%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%
+  \test{bar-test={a test}}%  
+  \advance\testcount -10\relax
+}
+
+\newcommand\testtensimple{%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \test{foo-test={a test}}%
+  \advance\testcount -10\relax
+}
+
+\newcommand\runtest[2][\option{/bench/repetitions}]{%
+	\preparetest{#2}%
+  \iftoggle{/bench/trace}
+   {{\tracingmacros 1\relax\test{bar-test={a test}}}}
+   {\typeout{test \option{/bench/style} "#2": (#1\space repetitions)}
+  	\expandafter\let\expandafter\testproc\csname testten\option{/bench/style}\endcsname 
+    \testcount=#1\relax%	    
+    \@whilenum\testcount>0\do\testproc
+  	\typeout{test "#2": " \valueof{bar}{bar-test}, \valueof{foo}{foo-test}"}%
+   }
+}
+
+\ifcase\option{/bench/library/@ord}\relax
+  % baseline = nothing
+  \typeout{baseline: do nothing}%
+\or
+  \runtest{options}
+\or
+  \runtest{pgfkeys}
+\or
+  \runtest{xkeyval}
+\else
+  \optionerror[/bench/library]{unknown library}
+\fi
+
+\iffalse
+% output benchmark results 
+\newcommand\adjust[2][1]{\the\numexpr#2 - \option{/bench/baseline}\relax ms (\the\numexpr (#2 - \option{/bench/baseline}/#1\relax ms per 1000)}
+
+\begin{tabular}{lrr}
+\textbf{package} & \textbf{50.000x} & \textbf{100.000x} \\ 
+\hline
+options & \adjust[50]{3300} & \adjust[100]{5960} \\
+pgfkeys & \adjust[50]{5520} & \adjust[100]{10840} \\
+xkeyval & \adjust[50]{14500} & \adjust[100]{27900} \\
+\hline
+\multicolumn{3}{l}{baseline = \plaintime ms} \\
+\multicolumn{3}{l}{platform = HP XW4600, Intel Core2 Quad CPU @ 3Ghz, 4Gb} \\
+\multicolumn{3}{l}{latex    = XeTeX 3.1415926-2.5-0.9999.3-2013060713 (TeX Live 2013/W32TeX)}\\
+\end{tabular}
+\fi
+
+\end{document}
