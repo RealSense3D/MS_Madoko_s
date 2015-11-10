@@ -1,0 +1,224 @@
+/*---------------------------------------------------------------------------
+  Copyright 2013 Microsoft Corporation.
+ 
+  This is free software; you can redistribute it and/or modify it under the
+  terms of the Apache License, Version 2.0. A copy of the License can be
+  found in the file "license.txt" at the root of this distribution.
+---------------------------------------------------------------------------*/
+
+// The parsing of metadata
+module metadata
+
+import std/log
+import std/dict
+import std/regex
+import std/string
+import std/path
+import common
+import options
+import optionsMeta
+
+// Parse the meta-data at the start of a document,
+// and return updated options and the rest of the document
+public function parseMeta( options0 : options, fmt : formatter, txt : string ) : div (options, string) 
+{
+  // read initial metadata
+  val (txt1,lineCount0) = stripInitialWhite(txt)
+  val (mdata1,rest,lineCount) = parsePlainMeta(txt1, fmt, options0.modes, verbose=options0.verbose >= 4, lines=lineCount0 )
+  // read further <!--meta sections
+  val mdatas = rest.findAll( rxMetaSection ).list.map fun(cap) {
+    val (metaTxt,lineCountMeta) = stripInitialWhite(cap.groups[1] + "\n")
+    val lineNo = lineCount + rest.substr(0,cap.index).count("\n") + lineCountMeta
+    val (mdatax,_,_) = parsePlainMeta(metaTxt, fmt, options0.modes, [], options0.verbose >= 4, lineNo )
+    mdatax
+  }
+  val mdata2 = mdata1 + mdatas.concat
+  // set options from metadata
+  val options1 = options0.fromMeta(mdata2)
+  val mdataFull = if (options1.bench || options1.metadata.find(fun(kv){ kv.fst=="defaults" }).bool) 
+    then options0.metadata + mdata2
+    else { 
+      val mdataDef  = parsePlainMeta(defaultMeta(options1,fmt), fmt, options1.modes, verbose=options1.verbose >= 4).fst      
+      mdataDef + options0.metadata + mdata2
+      //val options2  = options0.fromMeta(mdataFull)
+      //options2( metadata = mdataFull)
+    }
+  val mdataModed = mdataFull.filterModed
+  val options2 = options0.fromMeta(mdataModed)
+  val options = options2( metadata = mdataModed )
+
+  if (options.lineNo > 0)
+   then (options(lineNo = options.lineNo + lineCount),rest)
+   else (options,rest)  
+}
+val rxMetaSection = regex(@"^<!--meta *\n([\s\S]*?)^-->", multiline=True)
+
+function stripInitialWhite( txt : string ) : (string,int) {
+  match(txt.find(rxInitialWhite)) {
+    Nothing   -> (txt,0)
+    Just(cap) -> (txt.substr(cap.next), txt.substr(0,cap.next).count("\n"))
+  }
+}
+val rxInitialWhite = regex(@"^(\s|<!--(?!meta\b|madoko\b)[\s\S]*?-->)+")
+
+function makeKey(k,pre,value,rawvalue,lines) {
+  val kstart = k.substr(0,1) 
+  val isrule = (kstart=="#" || kstart=="." || kstart=="~");
+  val key = if (isrule) then k.trim.toLower else k.trim.normalizeId
+  if (kstart=="~") log("customs","{\"name\":" + key.json + ",\"display\":" + k.substr(1).json + "}")
+  if (key=="tex-header" || key=="tex-footer" || key=="tex-header-")   
+   then (pre + key,"%mdk-data-line={" + (lines+1).show + "}\n" + rawvalue )
+   else (pre + key,value)
+}                 
+
+function parsePlainMeta( txt : string, fmt : formatter, modes : string, metadata : metadata = [], verbose : bool = False, lines : int = 0 ) : (metadata,string,int) 
+{ 
+  match(txt.find(rxMeta)) {
+    Nothing   -> {
+      //if (metadata.isNil) trace("no metadata?: " + txt.substr(0,100))
+      (metadata.reverse,txt,lines)
+    }
+    Just(cap) -> {
+      //val matchMode = if (cap.groups[1].startsWith("no")) 
+      //                 then !fmt.matchFmt( cap.groups[1].substr(2), modes) 
+      //                 else fmt.matchFmt( cap.groups[1], modes)      
+      val value = cap.groups[4].joinLines.trim
+      //if (verbose) then trace("meta data:" + cap.groups[3] + ": " + value )
+      val rawkeys = if (cap.groups.matchedOn(3))
+                      then cap.groups[2].split(",").list.map(trim)
+                      else [cap.groups[2]]     
+      val pre = if (cap.groups[1] != "") then "@" + cap.groups[1] + " " else ""
+      val kvs = rawkeys.map( fun(k) { makeKey(k,pre,value,cap.groups[4],lines ) } );                
+      val lines2 = txt.substr(0,cap.next).count("\n")
+      parsePlainMeta( txt.substr1(cap.next), fmt, modes, kvs + metadata, verbose, lines+lines2 )
+    }
+  }
+} 
+val rxMetaComment = @"(?:\s*<!--[\s\S]*?-->(?: *\n)+)*"
+val rxMeta = regex(@"^"+ rxMetaComment + metaKey + @" *(.*(?:\n .*)*)(?:\n+(?=\n|" + metaKey + ")|$)")
+val metaKey = @"(?:@([\w\-@]+) +)?((?:\w|([\.#~])(?=\S))[\w\-\.#~, ]*?\*?) *[:]"
+
+// --------------------------------------------------------------
+// Complete author keys
+// --------------------------------------------------------------
+
+// fill out all the authorN keys
+public function completeAuthorKeys( mdata : metadata ) : metadata {
+  var authorCount := 0
+  val authors = mdata.concat fun(kv) {
+    val (key,value) = kv
+    if (key=="author") {
+      authorCount := authorCount+1
+      [("author" + authorCount.show, value)]
+    }
+    elif (key=="affiliation" || key=="institute" || key=="address") {
+      [("affiliation" + authorCount.show, value)]
+    }
+    elif (key=="email") {
+      [("email" + authorCount.show, value)]
+    }
+    elif (key=="author-note") {
+      [("author-note" + authorCount.show, value)]
+    }
+    else []
+  }
+  mdata + authors + [("author-count", authorCount.show )]
+}
+
+// --------------------------------------------------------------
+// Filter moded keys
+// --------------------------------------------------------------
+
+public function filterModed( mdata :metadata ) : <div> metadata {
+  val modes = mdict()
+  mdata.map( fun(kv) {
+    //trace("filter: " + kv.fst)
+    match(modes.unMode(kv.fst,mdata)) {
+      Just(key) -> Just((key,kv.snd))
+      Nothing   -> Nothing
+    }
+  }).concatMaybe
+}
+
+
+function unMode( modes : mdict<h,bool>, key0 : string, mdata : metadata ) : <div,st<h>> maybe<string> {
+  val key = key0.toLower
+  match(key.find(rxModed)) {
+    Nothing   -> Just(key) 
+    Just(cap) -> {
+      val neg  = cap.groups[1] == "no"
+      val mode = cap.groups[2]
+      val isTrue = (mode=="" || modes.getMode(mode,mdata))
+      val keep = ((isTrue && !neg) || (!isTrue && neg))
+      if (keep)
+       then unMode(modes, cap.groups[3], mdata)
+       else Nothing
+     }
+   }
+}
+
+function getMode( modes : mdict<h,bool>, mode : string, mdata : metadata ) : <div,st<h>> bool {
+  match(modes[mode]) {
+    Just(value) -> value
+    Nothing -> {
+      modes[mode] := False  // prevent infinite recursion
+      val mbRes = mdata.reverse.foreachUntil( fun(kv) { 
+        val key = kv.fst.toLower
+        match( key.find(rxModedKey)) {
+          Nothing   | key==mode -> Just(kv.snd) 
+          Just(cap) | cap.groups[1].trim.toLower == mode -> {
+            match(modes.unMode(kv.fst,mdata)) { // may recurse
+              Just(_) -> Just(kv.snd)
+              Nothing -> Nothing
+            }
+          }
+          _ -> Nothing
+        }        
+      })
+      match(mbRes) {
+        Just(raw) -> {
+          val value = raw.trim.toLower
+          val res = (value=="true" || value=="1")
+          modes[mode] := res
+          res        
+        }
+        Nothing     -> False
+      }
+    }
+  }
+}
+
+
+val rxModed = regex(@"@(no)?([\w\-]*)(?: *)(.*)")
+val rxModedKey = regex(@"@[\w\-@]+ +(.*)")
+
+// --------------------------------------------------------------
+// Default metadata
+// --------------------------------------------------------------
+
+function defaultMeta( options : options, fmt : formatter ) : string {
+  ( [ fmt.showFormatter + ": True",
+      @"~Bibliography : bibstyle='" + options.bibStyle + @"' bibdata='" + options.bib.splitPaths.join(",") + "' tex-elem=mdBibliography",
+    ] +
+    list(1,6).map fun(d) { heading(d,options.headingDepth,options.tocDepth) }
+    +
+    ["\n"]
+  ).join("\n") 
+}
+
+function heading( depth : int, headingDepth : int, tocDepth : int ) {
+  val label = list(1,depth).map( fun(d){ headingCounter(d) } ).join(".")
+  val num   = depth.show
+  ["~h" + num + ": ", 
+   (if (depth > 1) then headingCounter(depth) else ""),
+   " label='[" + label + "]{.heading-label}'",
+   (if (depth > headingDepth) then "" else " before='[&label;.&ensp;]{.heading-before}'"),
+   (if (depth > tocDepth) then "" else " toc")].join
+}
+
+// Generate a heading counter "headingCounter(2)" becomes "@h1-h2".
+// The prefix "h1-" ensures this counter resets on "@h1" increments.
+function headingCounter( depth : int) : string {
+  "@" + list(1,depth).map( fun(i) { "h" + i.show } ).join("-")
+}
+
